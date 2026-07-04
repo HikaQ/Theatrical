@@ -35,7 +35,7 @@ public class ConfigurationCardScreen extends Screen {
     private Checkbox autoIncrement;
     private BetterCheckbox enableUniverse, enableAddress;
     private UUID networkId = UUIDUtil.NULL;
-    private CompoundTag itemData;
+    private final CompoundTag itemData;
     public ConfigurationCardScreen(CompoundTag itemData) {
         super(Component.translatable("screen.configurationcard"));
         this.imageWidth = 176;
@@ -125,7 +125,7 @@ public class ConfigurationCardScreen extends Screen {
                 return;
             }
             int universe = Integer.parseInt(this.dmxUniverse.getValue());
-            if (universe > 16 || universe < 0) {
+            if (universe < 0) {
                 return;
             }
             new ConfigureConfigurationCard(networkId, dmx, universe, autoIncrement.selected(), enableUniverse.selected(), enableAddress.selected()).sendToServer();

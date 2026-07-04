@@ -1,4 +1,4 @@
-# 1.20.2-alpha.25
+# 1.20.2-alpha.28
 
-* Another minor change to support addons
-  *  Add API to fixture for inverting pan / tilt
+* Fix some UI's having the wrong titles etc (for real)
+* Fix a bug where sometimes models for fixtures wouldn't load properly when other mods were installed.

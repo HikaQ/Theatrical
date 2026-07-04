@@ -4,6 +4,7 @@ import dev.imabad.theatrical.api.DynamicLightProvider;
 import dev.imabad.theatrical.api.FixtureProvider;
 import dev.imabad.theatrical.api.Support;
 import dev.imabad.theatrical.blockentities.ClientSyncBlockEntity;
+import dev.imabad.theatrical.blockentities.SupportedBlockEntity;
 import dev.imabad.theatrical.blocks.HangableBlock;
 import dev.imabad.theatrical.blocks.light.BaseLightBlock;
 import dev.imabad.theatrical.config.TheatricalConfig;
@@ -19,6 +20,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -30,12 +32,12 @@ import org.joml.Vector3f;
 
 import java.util.Optional;
 
-public abstract class BaseLightBlockEntity extends ClientSyncBlockEntity implements FixtureProvider, DynamicLightProvider {
+public abstract class BaseLightBlockEntity extends ClientSyncBlockEntity implements FixtureProvider, DynamicLightProvider, SupportedBlockEntity {
     AABB INFINITE_EXTENT_AABB = new AABB(Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
     private double distance = 0;
     protected int pan, tilt, focus, intensity, red, green, blue = 0;
-    protected int prevTilt, prevPan, prevFocus, prevIntensity, prevRed, prevGreen, prevBlue, prevColour, prevSpread = 0;
-    private long tickTimer = 0;
+    protected int prevTilt, prevPan, prevFocus, prevIntensity, prevRed, prevGreen, prevBlue, prevColour = 0;
+    protected float prevSpread = 0;
     private BlockPos emissionBlock, prevEmissionBlock;
     private int prevLuminance;
     private LongOpenHashSet trackedLitChunkPos = new LongOpenHashSet();
@@ -52,7 +54,6 @@ public abstract class BaseLightBlockEntity extends ClientSyncBlockEntity impleme
         compoundTag.putInt("pan", this.pan);
         compoundTag.putInt("tilt", this.tilt);
         compoundTag.putInt("focus", this.focus);
-        compoundTag.putLong("timer", tickTimer);
         compoundTag.putDouble("distance", distance);
         compoundTag.putInt("intensity", intensity);
         compoundTag.putInt("prevIntensity", prevIntensity);
@@ -72,7 +73,6 @@ public abstract class BaseLightBlockEntity extends ClientSyncBlockEntity impleme
         prevPan = pan;
         prevTilt = tilt;
         prevFocus = focus;
-        tickTimer = compoundTag.getLong("timer");
         distance = compoundTag.getDouble("distance");
         intensity = compoundTag.getInt("intensity");
         prevIntensity = compoundTag.getInt("prevIntensity");
@@ -180,29 +180,21 @@ public abstract class BaseLightBlockEntity extends ClientSyncBlockEntity impleme
 
     public static <T extends BlockEntity> void tick(Level level, BlockPos pos, BlockState state, T be) {
         BaseLightBlockEntity tile = (BaseLightBlockEntity) be;
-//        if(!level.isClientSide){
-            tile.tickTimer++;
-            if(tile.tickTimer >= 5){
-//                if(tile.storePrev()){
-//                    level.sendBlockUpdated(pos, state, state, Block.UPDATE_CLIENTS);
-//                }
-
-                tile.tickTimer = 0;
+        if(tile.shouldTrace()){
+            tile.distance = tile.doRayTrace();
+        }
+        tile.tick();
+        if (level.isClientSide() && LightManager.shouldUpdateDynamicLight()) {
+            if (tile.isRemoved()) {
+                tile.setLightEnabled(false);
+            } else {
+                tile.lightTick();
+                LightManager.updateTracking(tile);
             }
-            if(tile.shouldTrace()){
-                tile.distance = tile.doRayTrace();
-            }
-            if (level.isClientSide() && LightManager.shouldUpdateDynamicLight()) {
-                if (tile.isRemoved()) {
-                    tile.setLightEnabled(false);
-                } else {
-                    tile.lightTick();
-                    LightManager.updateTracking(tile);
-                }
-            }
-//        } else {
-//        }
+        }
     }
+
+    public void tick() {}
 
     public int getPan() {
         return pan;
@@ -313,7 +305,7 @@ public abstract class BaseLightBlockEntity extends ClientSyncBlockEntity impleme
         float i = Mth.sin(g);
         float j = Mth.cos(f);
         float k = Mth.sin(f);
-        return new Vec3((double)(i * j), (double)(-k), (double)(h * j));
+        return new Vec3(i * j, -k, h * j);
     }
 
     public static boolean isHangingNonVertically(BlockState blockState){
@@ -417,6 +409,11 @@ public abstract class BaseLightBlockEntity extends ClientSyncBlockEntity impleme
         this.pan = pan;
     }
 
+    public void markAsDirty(){
+        setChanged();
+        level.sendBlockUpdated(getBlockPos(), getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
+    }
+
     @Override
     public int getLightLuminance() {
         float newVal = intensity / 255f;
@@ -474,17 +471,21 @@ public abstract class BaseLightBlockEntity extends ClientSyncBlockEntity impleme
         return ((int)getIntensity() << 24) | getColour();
     }
 
-    public int getPrevSpread() {
+    public float getPrevSpread() {
         return prevSpread;
     }
 
-    public void setPrevSpread(int prevSpread) {
+    public void setPrevSpread(float prevSpread) {
         this.prevSpread = prevSpread;
     }
 
     @Override
-    public int getLightSpread() {
-        return (getFocus() / 255) * 8;
+    public float getLightSpread() {
+        float focus = (getFocus() / 255f);
+        float minRadius = 1;
+        float maxRadius = (float) getFixture().getLightRadius();
+        float clampedSpread = Mth.clamp(focus, 0.05f, 1.0f);
+        return Mth.lerp(clampedSpread, minRadius, maxRadius);
     }
 
     @Override
